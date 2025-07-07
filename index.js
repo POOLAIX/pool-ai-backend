@@ -15,21 +15,14 @@ const openai = new OpenAI({
 });
 
 app.post("/generate", async (req, res) => {
-  const { prompt } = req.body;
-  if (!prompt) return res.status(400).json({ error: "No prompt provided" });
-
-  // 🧼 Clean and safe prompt to avoid OpenAI rejection
-  const cleanPrompt = `A backyard with a modern pool, deck, plants, and outdoor furniture. ${prompt
-    .replace(/flush|spa|sunken|infinity|luxury|hot tub|fire|sunbed/gi, "")
-    .replace(/[^a-zA-Z0-9 ,]/g, "")
-    .slice(0, 150)}`;
+  const prompt = "A modern backyard with a swimming pool, palm trees, and a wooden deck";
 
   try {
     const response = await openai.images.generate({
       model: "dall-e-2",
-      prompt: cleanPrompt,
+      prompt: prompt,
       n: 1,
-      size: "1024x1024",
+      size: "1024x1024"
     });
 
     const imageUrl = response.data[0].url;
