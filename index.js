@@ -6,7 +6,7 @@ import OpenAI from "openai";
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 
 app.use(bodyParser.json());
 
@@ -20,7 +20,7 @@ app.post("/generate", async (req, res) => {
 
   try {
     const response = await openai.images.generate({
-      model: "dall-e-2",
+      model: "dall-e-2", // ← most compatible
       prompt,
       n: 1,
       size: "1024x1024",
@@ -29,7 +29,7 @@ app.post("/generate", async (req, res) => {
     const imageUrl = response.data[0].url;
     res.status(200).json({ imageUrl });
   } catch (err) {
-    console.error(err);
+    console.error("OpenAI error:", err.response?.data || err.message || err);
     res.status(500).json({ error: "Image generation failed" });
   }
 });
