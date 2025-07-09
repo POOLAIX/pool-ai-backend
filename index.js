@@ -8,7 +8,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-app.use(bodyParser.json());
+// ✅ Increase body size limit to 20MB for base64 images
+app.use(bodyParser.json({ limit: "20mb" }));
+app.use(bodyParser.urlencoded({ extended: true, limit: "20mb", parameterLimit: 50000 }));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
