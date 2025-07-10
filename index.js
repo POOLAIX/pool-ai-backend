@@ -9,30 +9,17 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 app.use(cors());
-app.use(bodyParser.json({ limit: "2mb" }));
+app.use(bodyParser.json({ limit: "15mb" }));
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const usageTracker = new Map();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.post("/generate", async (req, res) => {
   const { prompt, email } = req.body;
-
   if (!prompt || !email) {
     return res.status(400).json({ error: "Missing prompt or email" });
   }
 
-  const cleanPrompt = `Modern backyard with landscaping and a pool. ${prompt}`
-    .replace(/[^a-zA-Z0-9 ,]/g, "")
-    .slice(0, 150);
-
-  // Free limit: 2 renders per email
-  const count = usageTracker.get(email) || 0;
-  if (count >= 2) {
-    return res.json({ limitReached: true });
-  }
+  const cleanPrompt = `A ${prompt} backyard with luxury pool and landscaping, photo-realistic, drone view, sunny day`;
 
   try {
     const response = await openai.images.generate({
@@ -43,9 +30,7 @@ app.post("/generate", async (req, res) => {
     });
 
     const imageUrl = response.data[0].url;
-    usageTracker.set(email, count + 1);
-
-    res.status(200).json({ imageUrl, limitReached: count + 1 >= 2 });
+    res.status(200).json({ imageUrl });
   } catch (err) {
     console.error("OpenAI error:", err.response?.data || err.message || err);
     res.status(500).json({ error: "Image generation failed" });
@@ -53,5 +38,5 @@ app.post("/generate", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`Server running on port ${port}`);
 });
