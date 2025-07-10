@@ -8,36 +8,44 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Allow CORS for local testing
 app.use(cors());
-app.use(bodyParser.json({ limit: "15mb" }));
+app.use(bodyParser.json({ limit: "2mb" }));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const usageTracker = new Map();
+
 app.post("/generate", async (req, res) => {
-  const { prompt, image } = req.body;
+  const { prompt, email } = req.body;
 
-  // Log for debug
-  console.log("Prompt:", prompt);
-  console.log("Base64 length:", image?.length);
+  if (!prompt || !email) {
+    return res.status(400).json({ error: "Missing prompt or email" });
+  }
 
-  if (!prompt || !image) {
-    return res.status(400).json({ error: "Missing prompt or image" });
+  const cleanPrompt = `Modern backyard with landscaping and a pool. ${prompt}`
+    .replace(/[^a-zA-Z0-9 ,]/g, "")
+    .slice(0, 150);
+
+  // Free limit: 2 renders per email
+  const count = usageTracker.get(email) || 0;
+  if (count >= 2) {
+    return res.json({ limitReached: true });
   }
 
   try {
-    const response = await openai.images.edit({
-      model: "dall-e-3",
-      image: image, // base64 string only (no "data:image/jpeg;base64," prefix needed)
-      prompt: `Overlay a modern backyard design: ${prompt}`,
-      size: "1024x1024",
-      response_format: "b64_json",
+    const response = await openai.images.generate({
+      model: "dall-e-2",
+      prompt: cleanPrompt,
+      n: 1,
+      size: "1024x1024"
     });
 
-    const base64Image = response.data[0].b64_json;
-    res.status(200).json({ imageBase64: base64Image });
+    const imageUrl = response.data[0].url;
+    usageTracker.set(email, count + 1);
+
+    res.status(200).json({ imageUrl, limitReached: count + 1 >= 2 });
   } catch (err) {
     console.error("OpenAI error:", err.response?.data || err.message || err);
     res.status(500).json({ error: "Image generation failed" });
@@ -45,5 +53,5 @@ app.post("/generate", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`✅ Pool AI backend running on port ${port}`);
+  console.log(`Server is running on port ${port}`);
 });
