@@ -10,9 +10,8 @@ dotenv.config();
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.json({ limit: "20mb" }));
 
-// OpenAI v4 format (DO NOT use Configuration)
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -21,13 +20,13 @@ app.post("/generate", async (req, res) => {
   try {
     const { image_base64, prompt } = req.body;
 
-    // Save base64 image to a temporary file
+    // Decode and save as PNG
     const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
     const tempPath = path.join(__dirname, "temp.png");
     fs.writeFileSync(tempPath, buffer);
 
-    // Send to OpenAI for inpainting (DALL·E)
+    // Send to OpenAI
     const response = await openai.images.edit({
       image: fs.createReadStream(tempPath),
       prompt: prompt,
@@ -36,7 +35,7 @@ app.post("/generate", async (req, res) => {
       response_format: "url",
     });
 
-    fs.unlinkSync(tempPath); // Delete temp file
+    fs.unlinkSync(tempPath);
     const imageUrl = response.data[0].url;
     res.json({ image_url: imageUrl });
   } catch (error) {
