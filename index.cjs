@@ -20,13 +20,13 @@ app.post("/generate", async (req, res) => {
   try {
     const { image_base64, prompt } = req.body;
 
-    // Decode and save as PNG
+    // Decode base64 PNG
     const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
     const tempPath = path.join(__dirname, "temp.png");
     fs.writeFileSync(tempPath, buffer);
 
-    // Send to OpenAI
+    // Send to OpenAI DALL·E 3
     const response = await openai.images.edit({
       image: fs.createReadStream(tempPath),
       prompt: prompt,
@@ -35,16 +35,8 @@ app.post("/generate", async (req, res) => {
       response_format: "url",
     });
 
-    fs.unlinkSync(tempPath);
-    const imageUrl = response.data[0].url;
-    res.json({ image_url: imageUrl });
-  } catch (error) {
-    console.error("OpenAI Error:", error.response?.data || error.message);
-    res.status(500).json({ error: error.message || "Image generation failed" });
-  }
-});
+    // ✅ FIXED: Correct path to image URL in OpenAI v4
+    const imageUrl = response.data.data[0].url;
+    console.log("✅ Generated image URL:", imageUrl);
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Pool AI backend running on port ${port}`);
-});
+    fs.unlinkSync(tempPath); // cleanup
