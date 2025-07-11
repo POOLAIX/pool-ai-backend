@@ -1,42 +1,51 @@
-import express from "express";
-import bodyParser from "body-parser";
-import dotenv from "dotenv";
-import OpenAI from "openai";
-import cors from "cors";
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const { Configuration, OpenAIApi } = require("openai");
+const dotenv = require("dotenv");
+const fs = require("fs");
+const path = require("path");
 
 dotenv.config();
+
 const app = express();
-const port = process.env.PORT || 8080;
-
 app.use(cors());
-app.use(bodyParser.json({ limit: "15mb" }));
+app.use(bodyParser.json({ limit: "10mb" }));
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
 
 app.post("/generate", async (req, res) => {
-  const { prompt, email } = req.body;
-  if (!prompt || !email) {
-    return res.status(400).json({ error: "Missing prompt or email" });
-  }
-
-  const cleanPrompt = `A ${prompt} backyard with luxury pool and landscaping, photo-realistic, drone view, sunny day`;
-
   try {
-    const response = await openai.images.generate({
-      model: "dall-e-2",
-      prompt: cleanPrompt,
-      n: 1,
-      size: "1024x1024"
-    });
+    const { image_base64, prompt } = req.body;
 
-    const imageUrl = response.data[0].url;
-    res.status(200).json({ imageUrl });
-  } catch (err) {
-    console.error("OpenAI error:", err.response?.data || err.message || err);
-    res.status(500).json({ error: "Image generation failed" });
+    // Strip base64 header and write to temp file
+    const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
+    const tempPath = path.join(__dirname, "temp.png");
+    fs.writeFileSync(tempPath, buffer);
+
+    // Call OpenAI's DALL·E 3 Inpainting (Note: only available in v4+ endpoints or API beta)
+    const response = await openai.createImageEdit(
+      fs.createReadStream(tempPath),
+      null, // No mask
+      prompt,
+      1,
+      "1024x1024"
+    );
+
+    fs.unlinkSync(tempPath); // clean up temp file
+    const imageUrl = response.data.data[0].url;
+    res.json({ image_url: imageUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message || "Failed to generate image" });
   }
 });
 
+const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
