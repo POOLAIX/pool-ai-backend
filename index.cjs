@@ -11,53 +11,65 @@ import { v4 as uuidv4 } from "uuid";
 dotenv.config();
 
 const app = express();
+const port = process.env.PORT || 8080;
+
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-const uploadDir = "./uploads";
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
-
-// Multer: store upload in memory
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
+app.use(express.json({ limit: '100mb' })); // increase JSON payload limit
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-app.post("/generate", upload.single("image"), async (req, res) => {
+const uploadDir = './uploads';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.diskStorage({
+  destination: uploadDir,
+  filename: (req, file, cb) => {
+    const uniqueName = uuidv4() + path.extname(file.originalname);
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({ storage: storage });
+
+app.post('/generate', upload.single('image'), async (req, res) => {
   try {
-    const prompt = req.body.prompt || "a luxury backyard with pool and spa";
-    const inputBuffer = req.file.buffer;
-    const inputId = uuidv4();
-    const inputPath = path.join(uploadDir, `${inputId}.png`);
+    const { prompt } = req.body;
+    const filePath = req.file.path;
 
-    // 🔧 Convert buffer to PNG
-    await sharp(inputBuffer)
-      .resize(1024, 1024, { fit: "cover" })
+    const resizedPath = `${filePath}-resized.png`;
+
+    // Resize to 1024x1024 and convert to PNG
+    await sharp(filePath)
+      .resize(1024, 1024, { fit: 'cover' })
       .png()
-      .toFile(inputPath);
+      .toFile(resizedPath);
 
-    const response = await openai.images.edit({
-      image: fs.createReadStream(inputPath),
-      mask: fs.createReadStream(inputPath),
-      prompt: prompt,
-      n: 1,
-      size: "1024x1024",
-      response_format: "b64_json"
+    const file = await openai.files.create({
+      file: fs.createReadStream(resizedPath),
+      purpose: "image",
     });
 
-    const base64Image = response.data.data[0].b64_json;
-    const imgBuffer = Buffer.from(base64Image, "base64");
+    const result = await openai.images.edit({
+      image: file.id,
+      mask: file.id,
+      prompt: prompt || "modern pool with spa and pergola",
+      n: 1,
+      size: "1024x1024",
+      response_format: "url"
+    });
 
-    res.setHeader("Content-Type", "image/png");
-    res.send(imgBuffer);
+    res.json({ imageUrl: result.data[0].url });
   } catch (err) {
     console.error("Error generating image:", err);
     res.status(500).json({ error: err.message || "Image generation failed" });
   }
 });
 
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`✅ Pool AI backend running on port ${PORT}`));
+app.listen(port, () => {
+  console.log(`✅ Pool AI backend running on port ${port}`);
+});
