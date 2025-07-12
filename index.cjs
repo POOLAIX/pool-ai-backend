@@ -1,12 +1,12 @@
-import express from "express";
-import cors from "cors";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
-import sharp from "sharp";
-import { OpenAI } from "openai";
-import dotenv from "dotenv";
-import { v4 as uuidv4 } from "uuid";
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+const sharp = require("sharp");
+const { OpenAI } = require("openai");
+const dotenv = require("dotenv");
+const { v4: uuidv4 } = require("uuid");
 
 dotenv.config();
 
@@ -14,7 +14,7 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 app.use(cors());
-app.use(express.json({ limit: '100mb' })); // increase JSON payload limit
+app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 const openai = new OpenAI({
@@ -40,10 +40,8 @@ app.post('/generate', upload.single('image'), async (req, res) => {
   try {
     const { prompt } = req.body;
     const filePath = req.file.path;
-
     const resizedPath = `${filePath}-resized.png`;
 
-    // Resize to 1024x1024 and convert to PNG
     await sharp(filePath)
       .resize(1024, 1024, { fit: 'cover' })
       .png()
