@@ -1,79 +1,59 @@
 const express = require("express");
-const cors = require("cors");
 const multer = require("multer");
+const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const sharp = require("sharp");
 const { v4: uuidv4 } = require("uuid");
-const { OpenAI } = require("openai");
+const sharp = require("sharp");
 require("dotenv").config();
 
-const app = express();
-const port = process.env.PORT || 8080;
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Increase payload and file size limits to 100MB
+const app = express();
 app.use(cors());
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
-// File upload setup (100 MB limit)
-const upload = multer({
-  dest: "uploads/",
-  limits: { fileSize: 100 * 1024 * 1024 },
-});
+const upload = multer({ dest: "uploads/", limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB
 
-// OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Resize image to PNG and max 1024x1024 for OpenAI compatibility
-async function preprocessImage(filePath) {
-  const outputPath = filePath + ".png";
-  await sharp(filePath)
-    .resize(1024, 1024, { fit: "inside" })
-    .toFormat("png")
-    .toFile(outputPath);
-  return outputPath;
-}
-
-// POST /generate endpoint
 app.post("/generate", upload.single("image"), async (req, res) => {
   try {
     const prompt = req.body.prompt;
-    const originalFile = req.file.path;
+    const imagePath = req.file.path;
 
-    // Resize and convert to PNG
-    const processedFile = await preprocessImage(originalFile);
+    const resizedPath = `uploads/resized-${uuidv4()}.png`;
 
-    const maskFilePath = processedFile; // same file used as mask for now
+    await sharp(imagePath)
+      .resize({ width: 1024 })
+      .png()
+      .toFile(resizedPath);
+
+    const mask = fs.createReadStream(resizedPath);
 
     const response = await openai.images.edit({
-      image: fs.createReadStream(processedFile),
-      mask: fs.createReadStream(maskFilePath),
-      prompt,
+      image: mask,
+      mask: mask,
+      prompt: prompt,
       n: 1,
       size: "1024x1024",
-      response_format: "url",
+      response_format: "b64_json"
     });
 
-    const imageUrl = response.data.data[0].url;
-    res.json({ image: imageUrl });
+    const b64 = response.data[0].b64_json;
+    const imgBuffer = Buffer.from(b64, "base64");
 
-    // Cleanup
-    fs.unlink(originalFile, () => {});
-    fs.unlink(processedFile, () => {});
-  } catch (error) {
-    console.error("Error generating image:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to generate image" });
+    res.setHeader("Content-Type", "image/png");
+    res.send(imgBuffer);
+
+    fs.unlinkSync(imagePath);
+    fs.unlinkSync(resizedPath);
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(400).json({ error: "Error generating image" });
   }
 });
 
-// Health check
-app.get("/", (req, res) => {
-  res.send("✅ Pool AI backend is running.");
-});
-
-app.listen(port, () => {
-  console.log(`✅ Pool AI backend running on port ${port}`);
+app.listen(8080, () => {
+  console.log("✅ Pool AI backend running on port 8080");
 });
