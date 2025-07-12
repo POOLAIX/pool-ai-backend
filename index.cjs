@@ -1,75 +1,63 @@
-const express = require('express');
-const multer = require('multer');
-const fs = require('fs');
-const sharp = require('sharp');
-const { v4: uuidv4 } = require('uuid');
-const { OpenAI } = require('openai');
-require('dotenv').config();
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import sharp from "sharp";
+import { OpenAI } from "openai";
+import dotenv from "dotenv";
+import { v4 as uuidv4 } from "uuid";
 
-// ✅ Create uploads folder if missing
-fs.mkdirSync('uploads', { recursive: true });
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 8080;
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+const uploadDir = "./uploads";
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/');
-  },
-  filename: function (req, file, cb) {
-    cb(null, 'input.png'); // overwrite each time
-  }
+// Multer config
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
 
-const upload = multer({
-  storage: storage,
-  fileFilter: function (req, file, cb) {
-    if (file.mimetype !== 'image/png') {
-      return cb(new Error('Only PNG files are allowed!'));
-    }
-    cb(null, true);
-  }
-});
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-app.post('/generate', upload.single('image'), async (req, res) => {
+app.post("/generate", upload.single("image"), async (req, res) => {
   try {
-    const inputPath = 'uploads/input.png';
-    const resizedPath = 'uploads/resized.png';
+    const prompt = req.body.prompt;
+    const inputBuffer = req.file.buffer;
+    const inputId = uuidv4();
+    const inputPath = path.join(uploadDir, `${inputId}.png`);
 
-    // Resize to 1024x1024 for DALL·E
-    await sharp(inputPath)
-      .resize(1024, 1024)
-      .toFile(resizedPath);
+    // Convert to PNG and resize (optional)
+    await sharp(inputBuffer)
+      .resize(1024, 1024, { fit: "cover" })
+      .png()
+      .toFile(inputPath);
 
-    const fileStream = fs.createReadStream(resizedPath);
-
-    const result = await openai.images.edit({
-      image: fileStream,
-      mask: fileStream, // For now using same image
-      prompt: req.body.prompt || 'modern backyard with pool',
+    const response = await openai.images.edit({
+      image: fs.createReadStream(inputPath),
+      mask: fs.createReadStream(inputPath), // or remove if no mask
+      prompt: prompt,
       n: 1,
-      size: '1024x1024',
-      response_format: 'url'
+      size: "1024x1024",
+      response_format: "b64_json"
     });
 
-    const imageUrl = result.data.data[0].url;
-    res.json({ url: imageUrl });
+    const base64Image = response.data.data[0].b64_json;
+    const imgBuffer = Buffer.from(base64Image, "base64");
 
-  } catch (error) {
-    console.error('Error generating image:', error);
-    res.status(500).json({ error: error.message });
+    res.setHeader("Content-Type", "image/png");
+    res.send(imgBuffer);
+  } catch (err) {
+    console.error("Error generating image:", err);
+    res.status(500).json({ error: err.message || "Image generation failed" });
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('✅ Pool Lux AI backend is running.');
-});
-
-app.listen(port, () => {
-  console.log(`✅ Pool Lux AI backend running on port ${port}`);
-});
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`✅ Pool AI backend running on port ${PORT}`));
