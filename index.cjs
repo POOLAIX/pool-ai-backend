@@ -14,7 +14,7 @@ app.use(cors());
 app.use(bodyParser.json({ limit: "10mb" }));
 
 app.get("/", (req, res) => {
-  res.send("Pool AI backend is running.");
+  res.send("✅ Pool AI backend is live.");
 });
 
 app.post("/generate", async (req, res) => {
@@ -28,7 +28,7 @@ app.post("/generate", async (req, res) => {
     const buffer = Buffer.from(base64Data, "base64");
     const tempPath = path.join(__dirname, "temp.png");
 
-    // ✅ Resize and convert to PNG
+    // ✅ Resize to 1024x1024 max to avoid OpenAI 4MB limit
     await sharp(buffer)
       .resize({ width: 1024, height: 1024, fit: "inside" })
       .png()
@@ -54,16 +54,16 @@ app.post("/generate", async (req, res) => {
     });
 
     const result = await response.json();
-    fs.unlinkSync(tempPath); // 🧼 Clean up temp file
+    fs.unlinkSync(tempPath); // Cleanup temp file
 
     if (result?.data?.[0]?.url) {
       res.json({ image_url: result.data[0].url });
     } else {
-      console.error("❌ OpenAI error:", result);
+      console.error("❌ OpenAI Error:", result);
       res.status(500).json({ error: "OpenAI failed to generate image." });
     }
   } catch (err) {
-    console.error("❌ Backend error:", err.message);
+    console.error("❌ Backend Error:", err.message);
     res.status(500).json({ error: err.message || "Unknown error" });
   }
 });
