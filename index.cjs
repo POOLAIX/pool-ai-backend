@@ -1,5 +1,3 @@
-// index.cjs
-
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -10,12 +8,12 @@ const { Configuration, OpenAIApi } = require("openai");
 
 const app = express();
 
-// ✅ Fix: Increase payload size limits to 100MB
+// ✅ Allow large payloads (base64 images)
 app.use(bodyParser.json({ limit: "100mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "100mb" }));
 app.use(cors());
 
-// ✅ OpenAI Setup
+// ✅ OpenAI setup
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -26,7 +24,7 @@ app.get("/", (req, res) => {
   res.send("✅ Pool AI backend is live.");
 });
 
-// ✅ AI image overlay endpoint
+// ✅ POST /generate
 app.post("/generate", async (req, res) => {
   try {
     const { image_base64, prompt } = req.body;
@@ -35,21 +33,47 @@ app.post("/generate", async (req, res) => {
       return res.status(400).json({ error: "Missing image or prompt." });
     }
 
-    // ✅ Convert base64 to buffer
+    // ✅ Decode base64 image
     const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, "");
-    const imageBuffer = Buffer.from(base64Data, "base64");
+    const buffer = Buffer.from(base64Data, "base64");
 
-    // ✅ Resize to 1024x1024 PNG using sharp
-    const resized = await sharp(imageBuffer)
+    // ✅ Resize to 1024x1024 and convert to PNG
+    const resized = await sharp(buffer)
       .resize(1024, 1024, { fit: "cover" })
       .png()
       .toBuffer();
 
+    // ✅ Save temp image
     const tempPath = path.join(__dirname, "input.png");
     fs.writeFileSync(tempPath, resized);
 
-    // ✅ Send to OpenAI
+    // ✅ OpenAI image overlay (inpainting)
     const result = await openai.createImageEdit(
-      fs.createReadStream(tempPath),
-      prompt,
-      fs.createReadStream(te
+      fs.createReadStream(tempPath),   // image
+      prompt,                          // prompt
+      fs.createReadStream(tempPath),   // mask (same image)
+      1,
+      "1024x1024"
+    );
+
+    // ✅ Cleanup temp file
+    fs.unlinkSync(tempPath);
+
+    const image_url = result?.data?.data?.[0]?.url;
+    if (!image_url) {
+      return res.status(500).json({ error: "No image returned from OpenAI." });
+    }
+
+    res.json({ image_url });
+
+  } catch (error) {
+    console.error("❌ Error:", error.response?.data || error.message);
+    res.status(500).json({ error: "Server error", detail: error.message });
+  }
+});
+
+// ✅ Start server
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`✅ Pool AI backend running on port ${PORT}`);
+});
