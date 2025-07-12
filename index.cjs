@@ -1,59 +1,70 @@
 const express = require("express");
-const multer = require("multer");
 const cors = require("cors");
+const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
-const { v4: uuidv4 } = require("uuid");
 const sharp = require("sharp");
+const { v4: uuidv4 } = require("uuid");
+const FormData = require("form-data");
+const fetch = require("node-fetch");
 require("dotenv").config();
 
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+const upload = multer();
 
-const upload = multer({ dest: "uploads/", limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB
+app.use(cors());
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 app.post("/generate", upload.single("image"), async (req, res) => {
   try {
-    const prompt = req.body.prompt;
-    const imagePath = req.file.path;
+    const prompt = req.body.prompt || "a modern luxury backyard design with pool";
+    const imageFile = req.file;
 
-    const resizedPath = `uploads/resized-${uuidv4()}.png`;
+    if (!imageFile || imageFile.mimetype !== "image/png") {
+      return res.status(400).json({ error: "Image must be PNG format." });
+    }
 
-    await sharp(imagePath)
-      .resize({ width: 1024 })
-      .png()
-      .toFile(resizedPath);
+    // Resize image
+    const resizedBuffer = await sharp(imageFile.buffer).resize({ width: 1024 }).png().toBuffer();
+    const tempFilename = `/tmp/${uuidv4()}.png`;
+    fs.writeFileSync(tempFilename, resizedBuffer);
 
-    const mask = fs.createReadStream(resizedPath);
+    // Prepare form for OpenAI
+    const formData = new FormData();
+    formData.append("image", fs.createReadStream(tempFilename), {
+      filename: "image.png",
+      contentType: "image/png",
+    });
+    formData.append("prompt", prompt);
+    formData.append("n", 1);
+    formData.append("size", "1024x1024");
+    formData.append("response_format", "url");
 
-    const response = await openai.images.edit({
-      image: mask,
-      mask: mask,
-      prompt: prompt,
-      n: 1,
-      size: "1024x1024",
-      response_format: "b64_json"
+    const response = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        ...formData.getHeaders(),
+      },
+      body: formData,
     });
 
-    const b64 = response.data[0].b64_json;
-    const imgBuffer = Buffer.from(b64, "base64");
+    fs.unlinkSync(tempFilename); // Clean up
 
-    res.setHeader("Content-Type", "image/png");
-    res.send(imgBuffer);
+    const data = await response.json();
 
-    fs.unlinkSync(imagePath);
-    fs.unlinkSync(resizedPath);
-  } catch (err) {
-    console.error("Error:", err);
-    res.status(400).json({ error: "Error generating image" });
+    if (!response.ok) {
+      return res.status(400).json({ error: data.error?.message || "OpenAI API error" });
+    }
+
+    res.json({ url: data.data[0].url });
+  } catch (error) {
+    console.error("Error generating image:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-app.listen(8080, () => {
-  console.log("✅ Pool AI backend running on port 8080");
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`✅ Pool AI backend running on port ${PORT}`);
 });
