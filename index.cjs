@@ -1,61 +1,60 @@
 const express = require("express");
-const cors = require("cors");
 const multer = require("multer");
-const FormData = require("form-data");
+const fs = require("fs");
+const path = require("path");
+const cors = require("cors");
+const { v4: uuidv4 } = require("uuid");
 const { OpenAI } = require("openai");
 require("dotenv").config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 
-app.use(cors());
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
-// In-memory storage (no disk writes)
+// Multer setup – store in memory, no folder required
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-app.post("/generate", upload.single("image"), async (req, res) => {
-  try {
-    const prompt = req.body.prompt;
-    const imageBuffer = req.file.buffer;
-
-    const formData = new FormData();
-    formData.append("image", imageBuffer, {
-      filename: "input.png",
-      contentType: "image/png",
-    });
-    formData.append("mask", imageBuffer, {
-      filename: "input.png",
-      contentType: "image/png",
-    });
-    formData.append("prompt", prompt);
-    formData.append("n", "1");
-    formData.append("size", "1024x1024");
-    formData.append("response_format", "url");
-
-    const response = await openai.images.edit({
-      image: imageBuffer,
-      mask: imageBuffer,
-      prompt: prompt,
-      n: 1,
-      size: "1024x1024",
-      response_format: "url",
-    });
-
-    const imageUrl = response.data.data[0].url;
-    res.json({ imageUrl });
-  } catch (error) {
-    console.error("Error generating image:", error);
-    res.status(500).json({ error: error.message });
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'image/png') cb(null, true);
+    else cb(new Error("Only PNG files are supported"));
   }
 });
 
+app.use(cors());
+app.use(express.json({ limit: "25mb" }));
+
+// OpenAI setup
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+app.post("/generate", upload.single("image"), async (req, res) => {
+  try {
+    const imageBuffer = req.file.buffer;
+    const prompt = req.body.prompt || "a beautiful modern backyard with pool and spa";
+
+    const response = await openai.images.edit({
+      image: imageBuffer,
+      mask: imageBuffer, // use same image as mask to apply edit to full image
+      prompt,
+      model: "dall-e-2",
+      response_format: "url",
+      n: 1,
+      size: "1024x1024"
+    });
+
+    const imageUrl = response.data[0].url;
+    res.status(200).json({ image: imageUrl });
+
+  } catch (err) {
+    console.error("Error generating image:", err);
+    res.status(500).json({ error: err.message || "Image generation failed" });
+  }
+});
+
+app.get("/", (req, res) => {
+  res.send("Pool Lux AI backend is running.");
+});
+
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`✅ Pool AI backend running on port ${port}`);
 });
