@@ -1,34 +1,39 @@
 const express = require("express");
-const cors = require("cors");
 const bodyParser = require("body-parser");
-const dotenv = require("dotenv");
+const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
-const OpenAI = require("openai");
 const FormData = require("form-data");
-
-dotenv.config();
+require("dotenv").config();
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json({ limit: "20mb" }));
+const PORT = process.env.PORT || 3000;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+app.use(cors());
+app.use(bodyParser.json({ limit: "10mb" }));
+
+app.get("/", (req, res) => {
+  res.send("Pool AI backend is running.");
 });
 
 app.post("/generate", async (req, res) => {
   try {
     const { image_base64, prompt } = req.body;
+    if (!image_base64 || !prompt) {
+      return res.status(400).json({ error: "Missing image or prompt." });
+    }
 
     const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
     const tempPath = path.join(__dirname, "temp.png");
 
-    await sharp(buffer).png().toFile(tempPath);
+    // ✅ Resize and convert to PNG
+    await sharp(buffer)
+      .resize({ width: 1024, height: 1024, fit: "inside" })
+      .png()
+      .toFile(tempPath);
 
-    // ✅ Use form-data to ensure MIME is set
     const form = new FormData();
     form.append("image", fs.createReadStream(tempPath), {
       filename: "temp.png",
@@ -39,7 +44,7 @@ app.post("/generate", async (req, res) => {
     form.append("size", "1024x1024");
     form.append("response_format", "url");
 
-    const response = await openai.fetch("https://api.openai.com/v1/images/edits", {
+    const response = await fetch("https://api.openai.com/v1/images/edits", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -49,22 +54,20 @@ app.post("/generate", async (req, res) => {
     });
 
     const result = await response.json();
-    fs.unlinkSync(tempPath);
+    fs.unlinkSync(tempPath); // 🧼 Clean up temp file
 
     if (result?.data?.[0]?.url) {
       res.json({ image_url: result.data[0].url });
     } else {
-      console.error("❌ OpenAI returned:", result);
+      console.error("❌ OpenAI error:", result);
       res.status(500).json({ error: "OpenAI failed to generate image." });
     }
-
-  } catch (error) {
-    console.error("❌ ERROR:", error.message);
-    res.status(500).json({ error: error.message || "Unknown error" });
+  } catch (err) {
+    console.error("❌ Backend error:", err.message);
+    res.status(500).json({ error: err.message || "Unknown error" });
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Backend running on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`✅ Pool AI backend running on port ${PORT}`);
 });
