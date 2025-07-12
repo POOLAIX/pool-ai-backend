@@ -5,6 +5,7 @@ const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
+const sharp = require("sharp");
 
 dotenv.config();
 
@@ -20,13 +21,17 @@ app.post("/generate", async (req, res) => {
   try {
     const { image_base64, prompt } = req.body;
 
-    // Decode base64 PNG
+    // Decode and convert to PNG using sharp
     const base64Data = image_base64.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
     const tempPath = path.join(__dirname, "temp.png");
-    fs.writeFileSync(tempPath, buffer);
 
-    // Send to OpenAI DALL·E 3
+    // Use sharp to ensure proper PNG formatting
+    await sharp(buffer)
+      .png()
+      .toFile(tempPath);
+
+    // Send to OpenAI
     const response = await openai.images.edit({
       image: fs.createReadStream(tempPath),
       prompt: prompt,
@@ -35,8 +40,19 @@ app.post("/generate", async (req, res) => {
       response_format: "url",
     });
 
-    // ✅ FIXED: Correct path to image URL in OpenAI v4
     const imageUrl = response.data.data[0].url;
-    console.log("✅ Generated image URL:", imageUrl);
+    console.log("✅ Image URL:", imageUrl);
 
-    fs.unlinkSync(tempPath); // cleanup
+    fs.unlinkSync(tempPath); // Clean up
+    res.json({ image_url: imageUrl });
+
+  } catch (error) {
+    console.error("❌ OpenAI Error:", error.response?.data || error.message);
+    res.status(500).json({ error: error.message || "Image generation failed" });
+  }
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`🚀 Pool AI backend running on port ${port}`);
+});
