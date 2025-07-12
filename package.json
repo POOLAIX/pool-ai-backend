@@ -1,16 +1,18 @@
 {
   "name": "pool-ai-backend",
   "version": "1.0.0",
-  "type": "commonjs",
+  "description": "Backend for Pool Lux AI image overlay rendering",
   "main": "index.cjs",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.cjs"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
-    "body-parser": "^1.20.2",
-    "openai": "^4.0.0"
+    "express": "^4.18.2",
+    "openai": "^4.27.0",
+    "sharp": "^0.33.0"
   }
 }
