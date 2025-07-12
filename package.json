@@ -1,17 +1,20 @@
 {
   "name": "pool-ai-backend",
   "version": "1.0.0",
-  "description": "Pool Lux AI image generation backend",
+  "description": "Backend for Pool AI",
   "main": "index.cjs",
   "type": "commonjs",
   "scripts": {
     "start": "node index.cjs"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
     "body-parser": "^1.20.2",
-    "sharp": "^0.33.2",
-    "openai": "^4.40.0"
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "fs": "^0.0.1-security",
+    "openai": "^4.30.0",
+    "sharp": "^0.33.1",
+    "uuid": "^9.0.0"
   }
 }
