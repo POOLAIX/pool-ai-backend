@@ -18,7 +18,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const uploadDir = "./uploads";
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
-// Multer config
+// Multer: store upload in memory
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
@@ -28,12 +28,12 @@ const openai = new OpenAI({
 
 app.post("/generate", upload.single("image"), async (req, res) => {
   try {
-    const prompt = req.body.prompt;
+    const prompt = req.body.prompt || "a luxury backyard with pool and spa";
     const inputBuffer = req.file.buffer;
     const inputId = uuidv4();
     const inputPath = path.join(uploadDir, `${inputId}.png`);
 
-    // Convert to PNG and resize (optional)
+    // 🔧 Convert buffer to PNG
     await sharp(inputBuffer)
       .resize(1024, 1024, { fit: "cover" })
       .png()
@@ -41,7 +41,7 @@ app.post("/generate", upload.single("image"), async (req, res) => {
 
     const response = await openai.images.edit({
       image: fs.createReadStream(inputPath),
-      mask: fs.createReadStream(inputPath), // or remove if no mask
+      mask: fs.createReadStream(inputPath),
       prompt: prompt,
       n: 1,
       size: "1024x1024",
