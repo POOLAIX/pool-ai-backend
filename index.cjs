@@ -1,64 +1,54 @@
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const FormData = require("form-data");
-const { OpenAI } = require("openai");
-const path = require("path");
-require("dotenv").config();
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const { OpenAI } = require('openai');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
-const upload = multer({ dest: "uploads/" });
+app.use(bodyParser.json({ limit: '10mb' }));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY
 });
 
-app.post("/generate", upload.single("image"), async (req, res) => {
+// Base64 decoder helper
+const decodeBase64Image = (base64String) => {
+  const matches = base64String.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
+  if (!matches || matches.length !== 3) {
+    throw new Error("Invalid base64 image string");
+  }
+  return Buffer.from(matches[2], 'base64');
+};
+
+app.post('/render', async (req, res) => {
+  const { imageBase64, prompt, style } = req.body;
+
+  if (!imageBase64 || !prompt || !style) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
   try {
-    const prompt = req.body.prompt;
-    const imagePath = req.file.path;
-    const imageType = req.file.mimetype;
+    const mask = decodeBase64Image(imageBase64); // You can skip if not using inpainting
 
-    if (imageType !== "image/png") {
-      return res.status(400).json({
-        error: "Only PNG images are supported. Please upload a .png file.",
-      });
-    }
-
-    const form = new FormData();
-    form.append("image", fs.createReadStream(imagePath));
-    form.append("prompt", prompt);
-    form.append("n", 1);
-    form.append("size", "1024x1024");
-
-    const response = await fetch("https://api.openai.com/v1/images/edits", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        ...form.getHeaders(),
-      },
-      body: form,
+    const response = await openai.images.edit({
+      image: mask,
+      mask: mask, // use same mask for simplicity
+      prompt: `${style} ${prompt}`,
+      n: 1,
+      size: "1024x1024",
+      response_format: "b64_json"
     });
 
-    const result = await response.json();
-    fs.unlinkSync(imagePath); // delete uploaded temp image
+    const imageBase64 = response.data[0].b64_json;
 
-    if (result.error) {
-      return res.status(400).json({ error: result.error.message });
-    }
-
-    res.json({ imageUrl: result.data[0].url });
+    res.json({
+      outputImageBase64: `data:image/jpeg;base64,${imageBase64}`
+    });
   } catch (error) {
-    console.error("Error generating image:", error);
-    res.status(500).json({ error: "Image generation failed." });
+    console.error("❌ Error:", error);
+    res.status(500).json({ error: error.message || "Failed to generate image" });
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log("Server running...");
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
